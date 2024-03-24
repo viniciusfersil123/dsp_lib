@@ -31,7 +31,7 @@ extern "C" void app_main(void)
     while (1)
     {
         // Set the frequency (you can change this dynamically as needed)
-        osc.SetFreq(phs.Process() * 3000);
+        osc.SetFreq(phs.Process() * 30000);
         audio_callback();
     }
 }
