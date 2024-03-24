@@ -1,51 +1,96 @@
+// #include "dsp.h"
 #include "Oscillator.h"
-#include <math.h>
+#include <cmath>
 
-void Oscillator::Init(float sample_rate)
-{
-    sample_rate_ = sample_rate;
-    phs.Init(sample_rate, 0);
-    waveform_ = WAVE_SIN;
-    SetWaveform(waveform_);
-}
+#define PI_F 3.1415927410125732421875f
+#define TWOPI_F (2.0f * PI_F)
 
-void Oscillator::SetFreq(float freq)
-{
-    phs.SetFreq(freq);
-}
-
-void Oscillator::SetWaveform(int waveform)
-{
-    switch (waveform)
-    {
-    case WAVE_SIN:
-        for (int i = 0; i < 1024; i++)
-        {
-            wavetable[i] = sin(2.0 * M_PI * i / 1024);
-        }
-        break;
-    case WAVE_TRI:
-        for (int i = 0; i < 1024; i++)
-        {
-            wavetable[i] = (i < 512) ? -1.0 + (i / 512.0) * 2.0 : 1.0 - ((i - 512) / 512.0) * 2.0;
-        }
-        break;
-    case WAVE_SAW:
-        for (int i = 0; i < 1024; i++)
-        {
-            wavetable[i] = -1.0 + (i / 1024.0) * 2.0;
-        }
-        break;
-    case WAVE_SQUARE:
-        for (int i = 0; i < 1024; i++)
-        {
-            wavetable[i] = (i < 512) ? -1.0 : 1.0;
-        }
-        break;
-    }
-}
+static inline float Polyblep(float phase_inc, float t);
 
 float Oscillator::Process()
 {
-    return wavetable[(int)(phs.Process() * 1024)];
+    float out, t;
+    switch (waveform_)
+    {
+    case WAVE_SIN:
+        out = sinf(phase_ * TWOPI_F);
+        break;
+    case WAVE_TRI:
+        t = -1.0f + (2.0f * phase_);
+        out = 2.0f * (fabsf(t) - 0.5f);
+        break;
+    case WAVE_SAW:
+        out = -1.0f * (((phase_ * 2.0f)) - 1.0f);
+        break;
+    case WAVE_RAMP:
+        out = ((phase_ * 2.0f)) - 1.0f;
+        break;
+    case WAVE_SQUARE:
+        out = phase_ < pw_ ? (1.0f) : -1.0f;
+        break;
+    case WAVE_POLYBLEP_TRI:
+        t = phase_;
+        out = phase_ < 0.5f ? 1.0f : -1.0f;
+        out += Polyblep(phase_inc_, t);
+        out -= Polyblep(phase_inc_, fastmod1f(t + 0.5f));
+        // Leaky Integrator:
+        // y[n] = A + x[n] + (1 - A) * y[n-1]
+        out = phase_inc_ * out + (1.0f - phase_inc_) * last_out_;
+        last_out_ = out;
+        out *= 4.f; // normalize amplitude after leaky integration
+        break;
+    case WAVE_POLYBLEP_SAW:
+        t = phase_;
+        out = (2.0f * t) - 1.0f;
+        out -= Polyblep(phase_inc_, t);
+        out *= -1.0f;
+        break;
+    case WAVE_POLYBLEP_SQUARE:
+        t = phase_;
+        out = phase_ < pw_ ? 1.0f : -1.0f;
+        out += Polyblep(phase_inc_, t);
+        out -= Polyblep(phase_inc_, fastmod1f(t + (1.0f - pw_)));
+        out *= 0.707f; // ?
+        break;
+    default:
+        out = 0.0f;
+        break;
+    }
+    phase_ += phase_inc_;
+    if (phase_ > 1.0f)
+    {
+        phase_ -= 1.0f;
+        eoc_ = true;
+    }
+    else
+    {
+        eoc_ = false;
+    }
+    eor_ = (phase_ - phase_inc_ < 0.5f && phase_ >= 0.5f);
+
+    return out * amp_;
+}
+
+float Oscillator::CalcPhaseInc(float f)
+{
+    return f * sr_recip_;
+}
+
+static float Polyblep(float phase_inc, float t)
+{
+    float dt = phase_inc;
+    if (t < dt)
+    {
+        t /= dt;
+        return t + t - t * t - 1.0f;
+    }
+    else if (t > 1.0f - dt)
+    {
+        t = (t - 1.0f) / dt;
+        return t * t + t + t + 1.0f;
+    }
+    else
+    {
+        return 0.0f;
+    }
 }

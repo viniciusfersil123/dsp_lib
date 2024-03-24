@@ -14,10 +14,7 @@ Oscillator osc;
 
 void audio_callback()
 {
-
-    
     int16_t OutputValue = (int16_t)(osc.Process() * Volume);
-
     Value32Bit = (OutputValue << 16) | (OutputValue & 0xffff);
     i2s_write(i2s_num, &Value32Bit, 4, &BytesWritten, portMAX_DELAY);
 }
@@ -29,13 +26,12 @@ extern "C" void app_main(void)
     i2s_set_pin(i2s_num, &pin_config);
     phs.Init(44100, 0.01);
     osc.Init(44100);
-    osc.SetWaveform(Oscillator::WAVE_SAW);
-
+    osc.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
 
     while (1)
     {
         // Set the frequency (you can change this dynamically as needed)
-        osc.SetFreq(phs.Process() * 30000);
+        osc.SetFreq(phs.Process() * 3000);
         audio_callback();
     }
 }
